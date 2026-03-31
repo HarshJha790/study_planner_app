@@ -103,27 +103,39 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
   Future<void> loginUser() async {
-  try {
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: emailController.text.trim(),
-      password: passwordController.text.trim(),
-    );
+    try {
+      final userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text.trim(),
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Login Successful")),
-    );
+      final user = userCredential.user;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => HomeScreen()),
-    );
+      // ❌ BLOCK if not verified
+      if (user != null && !user.emailVerified) {
+        await FirebaseAuth.instance.signOut();
 
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(e.toString())),
-    );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Please verify your email before logging in."),
+          ),
+        );
+
+        return;
+      }
+
+      // ✅ Allow if verified
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Login failed")),
+      );
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
