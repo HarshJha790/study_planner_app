@@ -622,13 +622,12 @@ class _SignupScreenState extends State<SignupScreen> {
       // Send verification email
       await userCredential.user!.sendEmailVerification();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Verification email sent. Please check your inbox."),
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const VerifyEmailScreen(),
         ),
       );
-
-      Navigator.pop(context); // go back to login
     } catch (e) {
       print(e);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -659,6 +658,71 @@ class _SignupScreenState extends State<SignupScreen> {
             ElevatedButton(
               onPressed: signup,
               child: const Text("Create Account"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class VerifyEmailScreen extends StatelessWidget {
+  const VerifyEmailScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Verify Email")),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              "A verification link has been sent to your email.\n\nPlease verify your email before continuing.",
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 30),
+
+            ElevatedButton(
+              onPressed: () async {
+                final user = FirebaseAuth.instance.currentUser;
+
+                await user?.reload();
+                final refreshedUser = FirebaseAuth.instance.currentUser;
+
+                if (refreshedUser != null &&
+                    refreshedUser.emailVerified) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const HomeScreen()),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Email not verified yet"),
+                    ),
+                  );
+                }
+              },
+              child: const Text("I have verified"),
+            ),
+
+            const SizedBox(height: 10),
+
+            TextButton(
+              onPressed: () async {
+                final user = FirebaseAuth.instance.currentUser;
+                await user?.sendEmailVerification();
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Verification email resent"),
+                  ),
+                );
+              },
+              child: const Text("Resend Email"),
             ),
           ],
         ),
