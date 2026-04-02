@@ -7,6 +7,62 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+/// Local calendar date for streak tracking (yyyy-MM-dd).
+String _streakDateString(DateTime d) {
+  final local = DateTime(d.year, d.month, d.day);
+  final y = local.year.toString().padLeft(4, '0');
+  final m = local.month.toString().padLeft(2, '0');
+  final day = local.day.toString().padLeft(2, '0');
+  return '$y-$m-$day';
+}
+
+String _todayStreakString() => _streakDateString(DateTime.now());
+
+String _yesterdayStreakString() =>
+    _streakDateString(DateTime.now().subtract(const Duration(days: 1)));
+
+/// If the user missed a full day of activity, reset streak to 0.
+Future<void> normalizeStreakIfStale(String uid) async {
+  final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+  final snap = await ref.get();
+  final data = snap.data() ?? {};
+  final last = data['streakLastDate'] as String?;
+  if (last == null || last.isEmpty) return;
+
+  final today = _todayStreakString();
+  final yesterday = _yesterdayStreakString();
+  if (last == today || last == yesterday) return;
+
+  await ref.set({'streak': 0}, SetOptions(merge: true));
+}
+
+/// Call when the user completes at least one checkbox (false → true) today.
+Future<void> applyStreakOnTaskCompleted(String uid) async {
+  final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+  final snap = await ref.get();
+  final data = snap.data() ?? {};
+  final last = data['streakLastDate'] as String?;
+  final current = (data['streak'] as num?)?.toInt() ?? 0;
+
+  final today = _todayStreakString();
+  final yesterday = _yesterdayStreakString();
+
+  if (last == today) return;
+
+  if (last == yesterday) {
+    await ref.set({
+      'streak': current + 1,
+      'streakLastDate': today,
+    }, SetOptions(merge: true));
+    return;
+  }
+
+  await ref.set({
+    'streak': 1,
+    'streakLastDate': today,
+  }, SetOptions(merge: true));
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -440,11 +496,33 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) normalizeStreakIfStale(uid);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final horizontalPadding = media.size.width < 520 ? 16.0 : 20.0;
+    final uid = FirebaseAuth.instance.currentUser!.uid;
 
-    return Scaffold(
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .snapshots(),
+      builder: (context, userSnap) {
+        final streak =
+            (userSnap.data?.data()?['streak'] as num?)?.toInt() ?? 0;
+        final streakLabel = streak == 1
+            ? '🔥 1 day streak'
+            : '🔥 $streak day streak';
+
+        return Scaffold(
       appBar: AppBar(
         title: const Text("Your roadmaps"),
         centerTitle: false,
@@ -452,6 +530,30 @@ class _HomeScreenState extends State<HomeScreen> {
         scrolledUnderElevation: 0,
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: const Color(0xFF4F46E5).withValues(alpha: 0.18),
+                  ),
+                ),
+                child: Text(
+                  streakLabel,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF4F46E5),
+                      ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       extendBodyBehindAppBar: true,
       body: Container(
@@ -473,7 +575,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: StreamBuilder(
             stream: FirebaseFirestore.instance
                 .collection('users')
-                .doc(FirebaseAuth.instance.currentUser!.uid)
+                .doc(uid)
                 .collection('roadmaps')
                 .orderBy('createdAt', descending: true)
                 .snapshots(),
@@ -735,6 +837,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: const Icon(Icons.add_rounded),
         ),
       ),
+    );
+      },
     );
   }
 }
@@ -1224,9 +1328,17 @@ class _RoadmapDetailScreenState extends State<RoadmapDetailScreen> {
                 child: CheckboxListTile(
                   value: isCompleted[index],
                   onChanged: (value) {
+                    final newVal = value ?? false;
+                    final wasCompleted = isCompleted[index];
                     setState(() {
-                      isCompleted[index] = value ?? false;
+                      isCompleted[index] = newVal;
                     });
+                    if (newVal && !wasCompleted) {
+                      final uid = FirebaseAuth.instance.currentUser?.uid;
+                      if (uid != null) {
+                        applyStreakOnTaskCompleted(uid);
+                      }
+                    }
                   },
                   activeColor: const Color(0xFF4F46E5),
                   checkColor: Colors.white,
