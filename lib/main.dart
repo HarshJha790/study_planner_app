@@ -441,72 +441,299 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final horizontalPadding = media.size.width < 520 ? 16.0 : 20.0;
+
     return Scaffold(
-      body: StreamBuilder(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(FirebaseAuth.instance.currentUser!.uid)
-            .collection('roadmaps')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      appBar: AppBar(
+        title: const Text("Your roadmaps"),
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+      ),
+      extendBodyBehindAppBar: true,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF6200EE).withValues(alpha: 0.06),
+              const Color(0xFF00C2FF).withValues(alpha: 0.06),
+              const Color(0xFFFFFFFF),
+            ],
+            stops: const [0.0, 0.55, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: StreamBuilder(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(FirebaseAuth.instance.currentUser!.uid)
+                .collection('roadmaps')
+                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          final docs = snapshot.data!.docs;
+              final docs = snapshot.data!.docs;
 
-          if (docs.isEmpty) {
-            return const Center(child: Text("No roadmaps yet"));
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final data = docs[index].data();
-              final docId = docs[index].id;
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: ListTile(
-                  title: Text(data['name']),
-                  subtitle: Text(
-                    "${(data['progress'] * 100).toInt()}% completed",
-                  ),
-                  trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => RoadmapDetailScreen(
-                                                docId: docId,
-                                                name: data['name'],
-                                                videos: List<String>.from(data['videos']),
-                                                completed: List<bool>.from(data['completed']),
-                                              ),
+              if (docs.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(horizontalPadding),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: Card(
+                        elevation: 0,
+                        color: Colors.white.withValues(alpha: 0.92),
+                        surfaceTintColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          side: BorderSide(
+                            color: Colors.black.withValues(alpha: 0.06),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(22),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 72,
+                                height: 72,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFF7C3AED),
+                                      Color(0xFF4F46E5),
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF4F46E5)
+                                          .withValues(alpha: 0.22),
+                                      blurRadius: 18,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.auto_awesome_rounded,
+                                  color: Colors.white,
+                                  size: 34,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                "No roadmaps yet",
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.3,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "Create your first roadmap to start tracking progress.",
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(
+                                      color: Colors.grey.shade700,
+                                      height: 1.35,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    );
-                  },
+                    ),
+                  ),
+                );
+              }
+
+              return ListView.separated(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  12,
+                  horizontalPadding,
+                  96,
                 ),
+                itemCount: docs.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final data = docs[index].data();
+                  final docId = docs[index].id;
+
+                  final String name = (data['name'] ?? '').toString();
+                  final double progress =
+                      (data['progress'] is num) ? (data['progress'] as num).toDouble() : 0.0;
+                  final int percent = (progress * 100).clamp(0, 100).round();
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => RoadmapDetailScreen(
+                            docId: docId,
+                            name: data['name'],
+                            videos: List<String>.from(data['videos']),
+                            completed: List<bool>.from(data['completed']),
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.06),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 18,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  name.isEmpty ? "Untitled roadmap" : name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -0.2,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4F46E5)
+                                      .withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  "$percent%",
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(
+                                        color: const Color(0xFF4F46E5),
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: Colors.grey.shade600,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: progress.clamp(0.0, 1.0),
+                              minHeight: 8,
+                              backgroundColor:
+                                  Colors.black.withValues(alpha: 0.06),
+                              valueColor: const AlwaysStoppedAnimation(
+                                Color(0xFF4F46E5),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            "$percent% completed",
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               );
             },
-          );
-        },
+          ),
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AddRoadmapScreen(),
+      floatingActionButton: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF7C3AED),
+              Color(0xFF4F46E5),
+              Color(0xFF2563EB),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF4F46E5).withValues(alpha: 0.28),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
             ),
-          );
-        },
-        child: const Icon(Icons.add),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AddRoadmapScreen(),
+              ),
+            );
+          },
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Icon(Icons.add_rounded),
+        ),
       ),
     );
   }
