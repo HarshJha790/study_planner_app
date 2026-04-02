@@ -916,9 +916,17 @@ class _RoadmapDetailScreenState extends State<RoadmapDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final horizontalPadding = media.size.width < 520 ? 16.0 : 20.0;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.name),
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
@@ -940,35 +948,180 @@ class _RoadmapDetailScreenState extends State<RoadmapDetailScreen> {
           },
         ),
       ),
-      body: Column(
-        children: [
-          const SizedBox(height: 20),
-
-          // Progress
-          Text(
-            "Progress: ${(getProgress() * 100).toStringAsFixed(0)}%",
-            style: const TextStyle(fontSize: 18),
+      extendBodyBehindAppBar: true,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF6200EE).withValues(alpha: 0.06),
+              const Color(0xFF00C2FF).withValues(alpha: 0.06),
+              const Color(0xFFFFFFFF),
+            ],
+            stops: const [0.0, 0.55, 1.0],
           ),
+        ),
+        child: SafeArea(
+          child: ListView.builder(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              8,
+              horizontalPadding,
+              20,
+            ),
+            itemCount: widget.videos.length + 1,
+            itemBuilder: (context, i) {
+              if (i == 0) {
+                final progress = getProgress().clamp(0.0, 1.0);
+                final percent = (progress * 100).round();
 
-          const SizedBox(height: 10),
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.06),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 18,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 54,
+                          height: 54,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 6,
+                                backgroundColor:
+                                    Colors.black.withValues(alpha: 0.06),
+                                valueColor: const AlwaysStoppedAnimation(
+                                  Color(0xFF4F46E5),
+                                ),
+                              ),
+                              Text(
+                                "$percent%",
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.2,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Progress",
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.2,
+                                    ),
+                              ),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  minHeight: 8,
+                                  backgroundColor:
+                                      Colors.black.withValues(alpha: 0.06),
+                                  valueColor: const AlwaysStoppedAnimation(
+                                    Color(0xFF4F46E5),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "${isCompleted.where((e) => e).length} of ${widget.videos.length} videos completed",
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: Colors.grey.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
 
-          Expanded(
-            child: ListView.builder(
-              itemCount: widget.videos.length,
-              itemBuilder: (context, index) {
-                return CheckboxListTile(
-                  title: Text(widget.videos[index]),
+              final index = i - 1;
+              final title = widget.videos[index];
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: Colors.black.withValues(alpha: 0.06),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 14,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: CheckboxListTile(
                   value: isCompleted[index],
                   onChanged: (value) {
                     setState(() {
                       isCompleted[index] = value ?? false;
-  });
-},
-                );
-              },
-            ),
+                    });
+                  },
+                  activeColor: const Color(0xFF4F46E5),
+                  checkColor: Colors.white,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
+                  title: Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          height: 1.25,
+                        ),
+                  ),
+                ),
+              );
+            },
           ),
-        ],
+        ),
       ),
     );
   }
