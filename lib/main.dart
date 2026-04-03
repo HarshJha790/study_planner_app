@@ -63,6 +63,34 @@ Future<void> applyStreakOnTaskCompleted(String uid) async {
   }, SetOptions(merge: true));
 }
 
+/// +10 XP the first time a roadmap video checkbox is completed (never again after uncheck/recheck).
+Future<void> awardXpOnFirstCompletion(
+  String uid,
+  String roadmapDocId,
+  int videoIndex,
+) async {
+  final key = '${roadmapDocId}_$videoIndex';
+  final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+
+  await FirebaseFirestore.instance.runTransaction((transaction) async {
+    final snap = await transaction.get(ref);
+    final data = snap.data() ?? {};
+    final keys = List<String>.from(data['xpAwardedKeys'] ?? []);
+    if (keys.contains(key)) return;
+
+    final xp = (data['xp'] as num?)?.toInt() ?? 0;
+    keys.add(key);
+    transaction.set(
+      ref,
+      {
+        'xp': xp + 10,
+        'xpAwardedKeys': keys,
+      },
+      SetOptions(merge: true),
+    );
+  });
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -518,9 +546,12 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context, userSnap) {
         final streak =
             (userSnap.data?.data()?['streak'] as num?)?.toInt() ?? 0;
+        final totalXp =
+            (userSnap.data?.data()?['xp'] as num?)?.toInt() ?? 0;
         final streakLabel = streak == 1
             ? '🔥 1 day streak'
             : '🔥 $streak day streak';
+        final xpLabel = '⭐ $totalXp XP';
 
         return Scaffold(
       appBar: AppBar(
@@ -534,21 +565,53 @@ class _HomeScreenState extends State<HomeScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: const Color(0xFF4F46E5).withValues(alpha: 0.18),
-                  ),
-                ),
-                child: Text(
-                  streakLabel,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF4F46E5),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        xpLabel,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFB45309),
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4F46E5).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: const Color(0xFF4F46E5).withValues(alpha: 0.18),
+                        ),
+                      ),
+                      child: Text(
+                        streakLabel,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF4F46E5),
+                            ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1337,6 +1400,7 @@ class _RoadmapDetailScreenState extends State<RoadmapDetailScreen> {
                       final uid = FirebaseAuth.instance.currentUser?.uid;
                       if (uid != null) {
                         applyStreakOnTaskCompleted(uid);
+                        awardXpOnFirstCompletion(uid, widget.docId, index);
                       }
                     }
                   },
