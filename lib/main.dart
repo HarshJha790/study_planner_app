@@ -884,11 +884,96 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: FloatingActionButton(
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const AddRoadmapScreen(),
+            showModalBottomSheet<void>(
+              context: context,
+              showDragHandle: true,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
+              builder: (sheetContext) {
+                return SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Create roadmap',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Choose how you want to build your roadmap.',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Colors.grey.shade700,
+                              ),
+                        ),
+                        const SizedBox(height: 16),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.ondemand_video_rounded,
+                              color: Color(0xFFDC2626),
+                            ),
+                          ),
+                          title: const Text(
+                            'YouTube Roadmap',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: const Text('Import videos from a playlist'),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const AddRoadmapScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 4),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4F46E5).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.checklist_rounded,
+                              color: Color(0xFF4F46E5),
+                            ),
+                          ),
+                          title: const Text(
+                            'Manual Roadmap',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: const Text('Add your own tasks'),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ManualRoadmapScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             );
           },
           elevation: 0,
@@ -902,6 +987,274 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
       },
+    );
+  }
+}
+
+class ManualRoadmapScreen extends StatefulWidget {
+  const ManualRoadmapScreen({super.key});
+
+  @override
+  State<ManualRoadmapScreen> createState() => _ManualRoadmapScreenState();
+}
+
+class _ManualRoadmapScreenState extends State<ManualRoadmapScreen> {
+  final TextEditingController _nameController = TextEditingController();
+  late List<TextEditingController> _taskControllers;
+
+  @override
+  void initState() {
+    super.initState();
+    _taskControllers = [TextEditingController()];
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    for (final c in _taskControllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  InputDecoration _outlineField({
+    required String label,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+      ),
+      focusedBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(18)),
+        borderSide: BorderSide(color: Color(0xFF6200EE), width: 2),
+      ),
+    );
+  }
+
+  void _addTask() {
+    setState(() {
+      _taskControllers.add(TextEditingController());
+    });
+  }
+
+  void _removeTask(int index) {
+    if (_taskControllers.length <= 1) return;
+    setState(() {
+      final removed = _taskControllers.removeAt(index);
+      removed.dispose();
+    });
+  }
+
+  Future<void> _submit() async {
+    final name = _nameController.text.trim();
+    final tasks = _taskControllers
+        .map((c) => c.text.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    if (name.isEmpty || tasks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a roadmap name and at least one task.'),
+        ),
+      );
+      return;
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('roadmaps')
+        .add({
+      'name': name,
+      'videos': tasks,
+      'completed': List.generate(tasks.length, (_) => false),
+      'progress': 0.0,
+      'createdAt': FieldValue.serverTimestamp(),
+      'source': 'manual',
+    });
+
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final horizontalPadding = MediaQuery.of(context).size.width < 520 ? 20.0 : 28.0;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Manual roadmap'),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+      ),
+      extendBodyBehindAppBar: true,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF6200EE).withValues(alpha: 0.08),
+              const Color(0xFF00C2FF).withValues(alpha: 0.08),
+              const Color(0xFFFFFFFF),
+            ],
+            stops: const [0.0, 0.55, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Card(
+                  elevation: 0,
+                  color: Colors.white.withValues(alpha: 0.92),
+                  surfaceTintColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: _nameController,
+                          textInputAction: TextInputAction.next,
+                          decoration: _outlineField(
+                            label: 'Roadmap name',
+                            icon: Icons.route_rounded,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Tasks',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.grey.shade800,
+                              ),
+                        ),
+                        const SizedBox(height: 10),
+                        ...List.generate(_taskControllers.length, (index) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _taskControllers[index],
+                                    textInputAction: TextInputAction.next,
+                                    decoration: _outlineField(
+                                      label: 'Task ${index + 1}',
+                                      icon: Icons.check_circle_outline_rounded,
+                                    ),
+                                  ),
+                                ),
+                                if (_taskControllers.length > 1) ...[
+                                  const SizedBox(width: 6),
+                                  IconButton(
+                                    onPressed: () => _removeTask(index),
+                                    icon: const Icon(Icons.close_rounded),
+                                    color: Colors.grey.shade600,
+                                    tooltip: 'Remove task',
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }),
+                        const SizedBox(height: 6),
+                        OutlinedButton.icon(
+                          onPressed: _addTask,
+                          icon: const Icon(Icons.add_rounded, size: 20),
+                          label: const Text('Add task'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF4F46E5),
+                            side: BorderSide(
+                              color: Colors.black.withValues(alpha: 0.12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFF7C3AED),
+                                Color(0xFF4F46E5),
+                                Color(0xFF2563EB),
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF4F46E5).withValues(alpha: 0.28),
+                                blurRadius: 14,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: SizedBox(
+                            height: 52,
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _submit,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                              ),
+                              child: Text(
+                                'Create roadmap',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.2,
+                                    ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
