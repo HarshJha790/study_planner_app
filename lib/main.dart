@@ -515,6 +515,77 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+//  DESIGN TOKENS  (private to this file)
+// ─────────────────────────────────────────────────────────────
+class _N {
+  // Sky
+  static const skyTop     = Color(0xFF9ECFE8);
+  static const skyMid     = Color(0xFFC9E8F5);
+  static const skyHorizon = Color(0xFFE8F5FB);
+
+  // Hills
+  static const hillFar    = Color(0xFFB2DFDB);
+  static const hillMid    = Color(0xFF80CBC4);
+  static const hillNear   = Color(0xFF66BB6A);
+  static const ground     = Color(0xFF4CAF50);
+
+  // Sun
+  static const sunCore    = Color(0xFFFFF9C4);
+  static const sunHalo    = Color(0xFFFFEB3B);
+
+  // Cards / UI
+  static const cardBg     = Color(0xFFF6FCF6);
+  static const cardBorder = Color(0xFFD4EDDA);
+  static const accent     = Color(0xFF2E7D32);
+  static const accentSoft = Color(0xFFE8F5E9);
+  static const textDark   = Color(0xFF1B3A28);
+  static const textMid    = Color(0xFF4A7C59);
+  static const textLight  = Color(0xFF8AAF8A);
+
+  // XP / streak badge tints (kept original hues)
+  static const xpAmber      = Color(0xFFF59E0B);
+  static const xpAmberDk    = Color(0xFFB45309);
+  static const streakIndigo = Color(0xFF4F46E5);
+}
+
+// ─────────────────────────────────────────────────────────────
+//  HILL CLIPPER
+// ─────────────────────────────────────────────────────────────
+class _HillClipper extends CustomClipper<Path> {
+  final List<double> pts; // relative Y values 0..1
+  const _HillClipper(this.pts);
+
+  @override
+  Path getClip(Size s) {
+    final path = Path();
+    final seg = s.width / (pts.length - 1);
+    path.moveTo(0, s.height * pts.first);
+    for (int i = 0; i < pts.length - 1; i++) {
+      final x1 = i * seg;
+      final x2 = (i + 1) * seg;
+      final y1 = s.height * pts[i];
+      final y2 = s.height * pts[i + 1];
+      path.quadraticBezierTo(
+        (x1 + x2) / 2,
+        (y1 + y2) / 2 - s.height * 0.05,
+        x2,
+        y2,
+      );
+    }
+    path.lineTo(s.width, s.height);
+    path.lineTo(0, s.height);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(_HillClipper o) => o.pts != pts;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  HOME SCREEN
+// ─────────────────────────────────────────────────────────────
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -523,469 +594,632 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // ── parallax ──────────────────────────────────────────────
+  final ScrollController _scroll = ScrollController();
+  double _offset = 0;
+
   @override
   void initState() {
     super.initState();
+    // ── original init logic (unchanged) ──────────────────────
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) normalizeStreakIfStale(uid);
     });
+
+    // parallax listener
+    _scroll.addListener(() {
+      if (mounted) setState(() => _offset = _scroll.offset);
+    });
   }
 
   @override
-  Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final horizontalPadding = media.size.width < 520 ? 16.0 : 20.0;
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
+  double _px(double speed) => (_offset * speed).clamp(-80.0, 80.0);
+
+  @override
+  Widget build(BuildContext context) {
+    final media             = MediaQuery.of(context);
+    final horizontalPadding = media.size.width < 520 ? 16.0 : 20.0;
+    final uid               = FirebaseAuth.instance.currentUser!.uid;
+
+    // ── original outer StreamBuilder (unchanged) ─────────────
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .snapshots(),
       builder: (context, userSnap) {
-        final streak =
-            (userSnap.data?.data()?['streak'] as num?)?.toInt() ?? 0;
-        final totalXp =
-            (userSnap.data?.data()?['xp'] as num?)?.toInt() ?? 0;
-        final streakLabel = streak == 1
-            ? '🔥 1 day streak'
-            : '🔥 $streak day streak';
-        final xpLabel = '⭐ $totalXp XP';
+        // ── original data extraction (unchanged) ─────────────
+        final streak      = (userSnap.data?.data()?['streak'] as num?)?.toInt() ?? 0;
+        final totalXp     = (userSnap.data?.data()?['xp']     as num?)?.toInt() ?? 0;
+        final streakLabel = streak == 1 ? '🔥 1 day streak' : '🔥 $streak day streak';
+        final xpLabel     = '⭐ $totalXp XP';
 
         return Scaffold(
-      appBar: AppBar(
-        title: const Text("Your roadmaps"),
-        centerTitle: false,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Text(
-                        xpLabel,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFB45309),
-                            ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4F46E5).withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: const Color(0xFF4F46E5).withValues(alpha: 0.18),
-                        ),
-                      ),
-                      child: Text(
-                        streakLabel,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF4F46E5),
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
+          backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: true,
+
+          // ── AppBar: same actions, nature-tinted glass ────────
+          appBar: AppBar(
+            title: const Text(
+              "Your roadmaps",
+              style: TextStyle(
+                color: _N.textDark,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+                fontSize: 20,
               ),
             ),
-          ),
-        ],
-      ),
-      extendBodyBehindAppBar: true,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF6200EE).withValues(alpha: 0.06),
-              const Color(0xFF00C2FF).withValues(alpha: 0.06),
-              const Color(0xFFFFFFFF),
-            ],
-            stops: const [0.0, 0.55, 1.0],
-          ),
-        ),
-        child: SafeArea(
-          child: StreamBuilder(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .doc(uid)
-                .collection('roadmaps')
-                .orderBy('createdAt', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              final docs = snapshot.data!.docs;
-
-              if (docs.isEmpty) {
-                return Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(horizontalPadding),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: Card(
-                        elevation: 0,
-                        color: Colors.white.withValues(alpha: 0.92),
-                        surfaceTintColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          side: BorderSide(
-                            color: Colors.black.withValues(alpha: 0.06),
-                          ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(22),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 72,
-                                height: 72,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      Color(0xFF7C3AED),
-                                      Color(0xFF4F46E5),
-                                    ],
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF4F46E5)
-                                          .withValues(alpha: 0.22),
-                                      blurRadius: 18,
-                                      offset: const Offset(0, 10),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.auto_awesome_rounded,
-                                  color: Colors.white,
-                                  size: 34,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                "No roadmaps yet",
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.3,
-                                    ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                "Create your first roadmap to start tracking progress.",
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.copyWith(
-                                      color: Colors.grey.shade700,
-                                      height: 1.35,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-
-              return ListView.separated(
-                padding: EdgeInsets.fromLTRB(
-                  horizontalPadding,
-                  12,
-                  horizontalPadding,
-                  96,
-                ),
-                itemCount: docs.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final data = docs[index].data();
-                  final docId = docs[index].id;
-
-                  final String name = (data['name'] ?? '').toString();
-                  final double progress =
-                      (data['progress'] is num) ? (data['progress'] as num).toDouble() : 0.0;
-                  final int percent = (progress * 100).clamp(0, 100).round();
-
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => RoadmapDetailScreen(
-                            docId: docId,
-                            name: data['name'],
-                            videos: List<String>.from(data['videos']),
-                            completed: List<bool>.from(data['completed']),
-                          ),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: Colors.black.withValues(alpha: 0.06),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 18,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  name.isEmpty ? "Untitled roadmap" : name,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: -0.2,
-                                      ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF4F46E5)
-                                      .withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  "$percent%",
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelLarge
-                                      ?.copyWith(
-                                        color: const Color(0xFF4F46E5),
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                color: Colors.grey.shade600,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          ClipRRect(
+            centerTitle: false,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            backgroundColor: _N.skyTop.withOpacity(0.72),
+            surfaceTintColor: Colors.transparent,
+            // ── original actions (unchanged) ─────────────────
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _N.xpAmber.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(999),
-                            child: LinearProgressIndicator(
-                              value: progress.clamp(0.0, 1.0),
-                              minHeight: 8,
-                              backgroundColor:
-                                  Colors.black.withValues(alpha: 0.06),
-                              valueColor: const AlwaysStoppedAnimation(
-                                Color(0xFF4F46E5),
-                              ),
-                            ),
+                            border: Border.all(
+                                color: _N.xpAmber.withValues(alpha: 0.35)),
                           ),
-                          const SizedBox(height: 10),
-                          Text(
-                            "$percent% completed",
+                          child: Text(
+                            xpLabel,
                             style: Theme.of(context)
                                 .textTheme
-                                .bodyMedium
+                                .labelLarge
                                 ?.copyWith(
-                                  color: Colors.grey.shade700,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w700,
+                                  color: _N.xpAmberDk,
                                 ),
                           ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ),
-      floatingActionButton: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF7C3AED),
-              Color(0xFF4F46E5),
-              Color(0xFF2563EB),
-            ],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF4F46E5).withValues(alpha: 0.28),
-              blurRadius: 18,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: FloatingActionButton(
-          onPressed: () {
-            showModalBottomSheet<void>(
-              context: context,
-              showDragHandle: true,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              builder: (sheetContext) {
-                return SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Create roadmap',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Choose how you want to build your roadmap.',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Colors.grey.shade700,
-                              ),
-                        ),
-                        const SizedBox(height: 16),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEF4444).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.ondemand_video_rounded,
-                              color: Color(0xFFDC2626),
-                            ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _N.streakIndigo.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                                color:
+                                    _N.streakIndigo.withValues(alpha: 0.18)),
                           ),
-                          title: const Text(
-                            'YouTube Roadmap',
-                            style: TextStyle(fontWeight: FontWeight.w700),
+                          child: Text(
+                            streakLabel,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: _N.streakIndigo,
+                                ),
                           ),
-                          subtitle: const Text('Import videos from a playlist'),
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const AddRoadmapScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 4),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF4F46E5).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.checklist_rounded,
-                              color: Color(0xFF4F46E5),
-                            ),
-                          ),
-                          title: const Text(
-                            'Manual Roadmap',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          subtitle: const Text('Add your own tasks'),
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const ManualRoadmapScreen(),
-                              ),
-                            );
-                          },
                         ),
                       ],
                     ),
                   ),
+                ),
+              ),
+            ],
+          ),
+
+          // ── body: nature parallax Stack ──────────────────────
+          body: Stack(
+            children: [
+              // 0 · Sky gradient (static)
+              Positioned.fill(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0.0, 0.5, 1.0],
+                      colors: [_N.skyTop, _N.skyMid, _N.skyHorizon],
+                    ),
+                  ),
+                ),
+              ),
+
+              // 1 · Sun glow
+              Positioned(
+                top: 72 - _px(0.05),
+                right: media.size.width * 0.12,
+                child: Container(
+                  width: 110,
+                  height: 110,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        _N.sunCore,
+                        _N.sunHalo.withOpacity(0.40),
+                        _N.skyMid.withOpacity(0.0),
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+
+              // 2 · Far hills (slowest)
+              Positioned(
+                bottom: -_px(0.10),
+                left: 0,
+                right: 0,
+                height: media.size.height * 0.52,
+                child: ClipPath(
+                  clipper: const _HillClipper(
+                      [0.0, 0.42, 0.52, 0.38, 0.48, 0.36, 0.55, 0.45, 1.0]),
+                  child: Container(color: _N.hillFar),
+                ),
+              ),
+
+              // 3 · Mid hills
+              Positioned(
+                bottom: -_px(0.18),
+                left: 0,
+                right: 0,
+                height: media.size.height * 0.40,
+                child: ClipPath(
+                  clipper: const _HillClipper(
+                      [0.0, 0.55, 0.42, 0.60, 0.38, 0.62, 0.50, 0.58, 1.0]),
+                  child: Container(color: _N.hillMid),
+                ),
+              ),
+
+              // 4 · Near hills (fastest background layer)
+              Positioned(
+                bottom: -_px(0.26),
+                left: 0,
+                right: 0,
+                height: media.size.height * 0.28,
+                child: ClipPath(
+                  clipper: const _HillClipper(
+                      [0.0, 0.62, 0.50, 0.55, 0.68, 0.46, 0.60, 0.70, 1.0]),
+                  child: Container(color: _N.hillNear),
+                ),
+              ),
+
+              // 5 · Ground strip
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 72,
+                child: Container(color: _N.ground),
+              ),
+
+              // 6 · Scrollable foreground
+              SafeArea(
+                child: StreamBuilder(
+                  // ── original inner StreamBuilder (unchanged) ─
+                  stream: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .collection('roadmaps')
+                      .orderBy('createdAt', descending: true)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const Center(
+                          child: CircularProgressIndicator());
+                    }
+
+                    final docs = snapshot.data!.docs;
+
+                    // ── empty state (unchanged logic, nature skin) ─
+                    if (docs.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(horizontalPadding),
+                          child: ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxWidth: 520),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: _N.cardBg.withOpacity(0.94),
+                                borderRadius: BorderRadius.circular(28),
+                                border:
+                                    Border.all(color: _N.cardBorder),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color:
+                                        _N.hillNear.withOpacity(0.12),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              padding: const EdgeInsets.all(28),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 72,
+                                    height: 72,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _N.accentSoft,
+                                      border: Border.all(
+                                          color: _N.cardBorder,
+                                          width: 2),
+                                    ),
+                                    child: const Icon(
+                                      Icons.eco_rounded,
+                                      color: _N.accent,
+                                      size: 34,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    "No roadmaps yet",
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          color: _N.textDark,
+                                          letterSpacing: -0.3,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    "Create your first roadmap to start tracking progress.",
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(
+                                          color: _N.textMid,
+                                          height: 1.45,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    // ── list (original ListView.separated + onTap intact) ─
+                    return ListView.separated(
+                      controller: _scroll,
+                      padding: EdgeInsets.fromLTRB(
+                          horizontalPadding, 12, horizontalPadding, 96),
+                      itemCount: docs.length,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(height: 14),
+                      itemBuilder: (context, index) {
+                        final data  = docs[index].data();
+                        final docId = docs[index].id;
+
+                        // ── original data extraction (unchanged) ──
+                        final String name =
+                            (data['name'] ?? '').toString();
+                        final double progress =
+                            (data['progress'] is num)
+                                ? (data['progress'] as num).toDouble()
+                                : 0.0;
+                        final int percent =
+                            (progress * 100).clamp(0, 100).round();
+
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(22),
+                          // ── original onTap / navigation (unchanged) ─
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    RoadmapDetailScreen(
+                                  docId: docId,
+                                  name: data['name'],
+                                  videos: List<String>.from(
+                                      data['videos']),
+                                  completed: List<bool>.from(
+                                      data['completed']),
+                                ),
+                              ),
+                            );
+                          },
+                          // ── nature card ──────────────────────────
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: _N.cardBg.withOpacity(0.93),
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(
+                                  color: _N.cardBorder, width: 1.2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _N.hillNear.withOpacity(0.10),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 8),
+                                  spreadRadius: -2,
+                                ),
+                                BoxShadow(
+                                  color: Colors.white.withOpacity(0.75),
+                                  blurRadius: 0,
+                                  offset: const Offset(0, -1),
+                                ),
+                              ],
+                            ),
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    // icon accent
+                                    Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: BoxDecoration(
+                                        color: _N.accentSoft,
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        border: Border.all(
+                                            color: _N.cardBorder),
+                                      ),
+                                      child: const Icon(
+                                        Icons.route_rounded,
+                                        color: _N.accent,
+                                        size: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    // ── original name (unchanged) ──
+                                    Expanded(
+                                      child: Text(
+                                        name.isEmpty
+                                            ? "Untitled roadmap"
+                                            : name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: -0.2,
+                                              color: _N.textDark,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    // ── original percent badge ──────
+                                    Container(
+                                      padding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: _N.accentSoft,
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                        border: Border.all(
+                                            color: _N.cardBorder),
+                                      ),
+                                      child: Text(
+                                        "$percent%",
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              color: _N.accent,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: _N.textLight,
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 12),
+                                Container(height: 1, color: _N.cardBorder),
+                                const SizedBox(height: 12),
+
+                                // ── original progress bar (unchanged value logic) ─
+                                ClipRRect(
+                                  borderRadius:
+                                      BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: progress.clamp(0.0, 1.0),
+                                    minHeight: 7,
+                                    backgroundColor:
+                                        _N.cardBorder.withOpacity(0.6),
+                                    valueColor:
+                                        const AlwaysStoppedAnimation(
+                                            _N.accent),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+
+                                // ── original label (unchanged) ───────
+                                Text(
+                                  "$percent% completed",
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: _N.textMid,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+
+          // ── FAB: original logic unchanged, nature gradient ────
+          floatingActionButton: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF388E3C),
+                  Color(0xFF2E7D32),
+                  Color(0xFF1B5E20),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _N.accent.withOpacity(0.30),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: FloatingActionButton(
+              // ── original onPressed / modal (unchanged) ──────────
+              onPressed: () {
+                showModalBottomSheet<void>(
+                  context: context,
+                  showDragHandle: true,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  builder: (sheetContext) {
+                    return SafeArea(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Create roadmap',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                      fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Choose how you want to build your roadmap.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                      color: Colors.grey.shade700),
+                            ),
+                            const SizedBox(height: 16),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEF4444)
+                                      .withValues(alpha: 0.12),
+                                  borderRadius:
+                                      BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.ondemand_video_rounded,
+                                  color: Color(0xFFDC2626),
+                                ),
+                              ),
+                              title: const Text('YouTube Roadmap',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w700)),
+                              subtitle: const Text(
+                                  'Import videos from a playlist'),
+                              onTap: () {
+                                Navigator.pop(sheetContext);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AddRoadmapScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 4),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4F46E5)
+                                      .withValues(alpha: 0.12),
+                                  borderRadius:
+                                      BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.checklist_rounded,
+                                  color: Color(0xFF4F46E5),
+                                ),
+                              ),
+                              title: const Text('Manual Roadmap',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w700)),
+                              subtitle:
+                                  const Text('Add your own tasks'),
+                              onTap: () {
+                                Navigator.pop(sheetContext);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const ManualRoadmapScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 );
               },
-            );
-          },
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+              elevation: 0,
+              backgroundColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(Icons.add_rounded),
+            ),
           ),
-          child: const Icon(Icons.add_rounded),
-        ),
-      ),
-    );
+        );
       },
     );
   }
