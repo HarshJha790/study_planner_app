@@ -765,20 +765,16 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // ── parallax ──────────────────────────────────────────────
   final ScrollController _scroll = ScrollController();
   double _offset = 0;
 
   @override
   void initState() {
     super.initState();
-    // ── original init logic (unchanged) ──────────────────────
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) normalizeStreakIfStale(uid);
     });
-
-    // parallax listener
     _scroll.addListener(() {
       if (mounted) setState(() => _offset = _scroll.offset);
     });
@@ -792,20 +788,73 @@ class _HomeScreenState extends State<HomeScreen> {
 
   double _px(double speed) => (_offset * speed).clamp(-80.0, 80.0);
 
+  // ── NEW: delete helper ────────────────────────────────────
+  Future<void> _deleteRoadmap(
+      BuildContext context, String uid, String docId, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        backgroundColor: _N.cardBg,
+        title: const Text(
+          'Delete roadmap?',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: _N.textDark,
+            fontSize: 18,
+          ),
+        ),
+        content: Text(
+          '"${name.isEmpty ? 'Untitled roadmap' : name}" will be permanently deleted.',
+          style: const TextStyle(color: _N.textMid, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(foregroundColor: _N.textMid),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFD32F2F),
+            ),
+            child: const Text(
+              'Delete',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('roadmaps')
+          .doc(docId)
+          .delete();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final media             = MediaQuery.of(context);
     final horizontalPadding = media.size.width < 520 ? 16.0 : 20.0;
     final uid               = FirebaseAuth.instance.currentUser!.uid;
 
-    // ── original outer StreamBuilder (unchanged) ─────────────
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .snapshots(),
       builder: (context, userSnap) {
-        // ── original data extraction (unchanged) ─────────────
         final streak      = (userSnap.data?.data()?['streak'] as num?)?.toInt() ?? 0;
         final totalXp     = (userSnap.data?.data()?['xp']     as num?)?.toInt() ?? 0;
         final streakLabel = streak == 1 ? '🔥 1 day streak' : '🔥 $streak day streak';
@@ -814,8 +863,6 @@ class _HomeScreenState extends State<HomeScreen> {
         return Scaffold(
           backgroundColor: Colors.transparent,
           extendBodyBehindAppBar: true,
-
-          // ── AppBar: same actions, nature-tinted glass ────────
           appBar: AppBar(
             title: const Text(
               "Your roadmaps",
@@ -831,7 +878,6 @@ class _HomeScreenState extends State<HomeScreen> {
             scrolledUnderElevation: 0,
             backgroundColor: _N.skyTop.withOpacity(0.72),
             surfaceTintColor: Colors.transparent,
-            // ── original actions (unchanged) ─────────────────
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 12),
@@ -891,10 +937,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          // ── body: nature parallax Stack ──────────────────────
           body: Stack(
             children: [
-              // 0 · Sky gradient (static)
+              // 0 · Sky gradient
               Positioned.fill(
                 child: Container(
                   decoration: const BoxDecoration(
@@ -929,7 +974,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // 2 · Far hills (slowest)
+              // 2 · Far hills
               Positioned(
                 bottom: -_px(0.10),
                 left: 0,
@@ -955,7 +1000,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // 4 · Near hills (fastest background layer)
+              // 4 · Near hills
               Positioned(
                 bottom: -_px(0.26),
                 left: 0,
@@ -980,7 +1025,6 @@ class _HomeScreenState extends State<HomeScreen> {
               // 6 · Scrollable foreground
               SafeArea(
                 child: StreamBuilder(
-                  // ── original inner StreamBuilder (unchanged) ─
                   stream: FirebaseFirestore.instance
                       .collection('users')
                       .doc(uid)
@@ -989,30 +1033,25 @@ class _HomeScreenState extends State<HomeScreen> {
                       .snapshots(),
                   builder: (context, snapshot) {
                     if (!snapshot.hasData) {
-                      return const Center(
-                          child: CircularProgressIndicator());
+                      return const Center(child: CircularProgressIndicator());
                     }
 
                     final docs = snapshot.data!.docs;
 
-                    // ── empty state (unchanged logic, nature skin) ─
                     if (docs.isEmpty) {
                       return Center(
                         child: Padding(
                           padding: EdgeInsets.all(horizontalPadding),
                           child: ConstrainedBox(
-                            constraints:
-                                const BoxConstraints(maxWidth: 520),
+                            constraints: const BoxConstraints(maxWidth: 520),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: _N.cardBg.withOpacity(0.94),
                                 borderRadius: BorderRadius.circular(28),
-                                border:
-                                    Border.all(color: _N.cardBorder),
+                                border: Border.all(color: _N.cardBorder),
                                 boxShadow: [
                                   BoxShadow(
-                                    color:
-                                        _N.hillNear.withOpacity(0.12),
+                                    color: _N.hillNear.withOpacity(0.12),
                                     blurRadius: 24,
                                     offset: const Offset(0, 10),
                                   ),
@@ -1029,8 +1068,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       shape: BoxShape.circle,
                                       color: _N.accentSoft,
                                       border: Border.all(
-                                          color: _N.cardBorder,
-                                          width: 2),
+                                          color: _N.cardBorder, width: 2),
                                     ),
                                     child: const Icon(
                                       Icons.eco_rounded,
@@ -1071,48 +1109,39 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     }
 
-                    // ── list (original ListView.separated + onTap intact) ─
                     return ListView.separated(
                       controller: _scroll,
                       padding: EdgeInsets.fromLTRB(
                           horizontalPadding, 12, horizontalPadding, 96),
                       itemCount: docs.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 14),
+                      separatorBuilder: (_, __) => const SizedBox(height: 14),
                       itemBuilder: (context, index) {
                         final data  = docs[index].data();
                         final docId = docs[index].id;
 
-                        // ── original data extraction (unchanged) ──
-                        final String name =
-                            (data['name'] ?? '').toString();
-                        final double progress =
-                            (data['progress'] is num)
-                                ? (data['progress'] as num).toDouble()
-                                : 0.0;
+                        final String name = (data['name'] ?? '').toString();
+                        final double progress = (data['progress'] is num)
+                            ? (data['progress'] as num).toDouble()
+                            : 0.0;
                         final int percent =
                             (progress * 100).clamp(0, 100).round();
 
                         return InkWell(
                           borderRadius: BorderRadius.circular(22),
-                          // ── original onTap / navigation (unchanged) ─
                           onTap: () async {
                             await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) =>
-                                    RoadmapDetailScreen(
+                                builder: (context) => RoadmapDetailScreen(
                                   docId: docId,
                                   name: data['name'],
-                                  videos: List<String>.from(
-                                      data['videos']),
-                                  completed: List<bool>.from(
-                                      data['completed']),
+                                  videos: List<String>.from(data['videos']),
+                                  completed:
+                                      List<bool>.from(data['completed']),
                                 ),
                               ),
                             );
                           },
-                          // ── nature card ──────────────────────────
                           child: Container(
                             decoration: BoxDecoration(
                               color: _N.cardBg.withOpacity(0.93),
@@ -1135,8 +1164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             padding: const EdgeInsets.all(18),
                             child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
@@ -1158,7 +1186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                     ),
                                     const SizedBox(width: 12),
-                                    // ── original name (unchanged) ──
+                                    // name
                                     Expanded(
                                       child: Text(
                                         name.isEmpty
@@ -1177,12 +1205,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                     ),
                                     const SizedBox(width: 10),
-                                    // ── original percent badge ──────
+                                    // percent badge
                                     Container(
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 5),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 5),
                                       decoration: BoxDecoration(
                                         color: _N.accentSoft,
                                         borderRadius:
@@ -1201,11 +1227,26 @@ class _HomeScreenState extends State<HomeScreen> {
                                             ),
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
-                                    Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: _N.textLight,
+                                    const SizedBox(width: 4),
+
+                                    // ── NEW: delete button ───────────
+                                    IconButton(
+                                      onPressed: () => _deleteRoadmap(
+                                          context, uid, docId, name),
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 20,
+                                      ),
+                                      color: const Color(0xFFE57373),
+                                      splashRadius: 20,
+                                      tooltip: 'Delete roadmap',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 32,
+                                        minHeight: 32,
+                                      ),
                                     ),
+                                    // ── end new ──────────────────────
                                   ],
                                 ),
 
@@ -1213,10 +1254,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Container(height: 1, color: _N.cardBorder),
                                 const SizedBox(height: 12),
 
-                                // ── original progress bar (unchanged value logic) ─
+                                // progress bar
                                 ClipRRect(
-                                  borderRadius:
-                                      BorderRadius.circular(999),
+                                  borderRadius: BorderRadius.circular(999),
                                   child: LinearProgressIndicator(
                                     value: progress.clamp(0.0, 1.0),
                                     minHeight: 7,
@@ -1229,7 +1269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 const SizedBox(height: 8),
 
-                                // ── original label (unchanged) ───────
+                                // label
                                 Text(
                                   "$percent% completed",
                                   style: Theme.of(context)
@@ -1252,7 +1292,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          // ── FAB: original logic unchanged, nature gradient ────
           floatingActionButton: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
@@ -1274,7 +1313,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             child: FloatingActionButton(
-              // ── original onPressed / modal (unchanged) ──────────
               onPressed: () {
                 showModalBottomSheet<void>(
                   context: context,
@@ -1286,20 +1324,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (sheetContext) {
                     return SafeArea(
                       child: Padding(
-                        padding:
-                            const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment:
-                              CrossAxisAlignment.stretch,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Text(
                               'Create roadmap',
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
-                                  ?.copyWith(
-                                      fontWeight: FontWeight.w800),
+                                  ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -1307,8 +1342,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               style: Theme.of(context)
                                   .textTheme
                                   .bodyMedium
-                                  ?.copyWith(
-                                      color: Colors.grey.shade700),
+                                  ?.copyWith(color: Colors.grey.shade700),
                             ),
                             const SizedBox(height: 16),
                             ListTile(
@@ -1318,8 +1352,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFEF4444)
                                       .withValues(alpha: 0.12),
-                                  borderRadius:
-                                      BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: const Icon(
                                   Icons.ondemand_video_rounded,
@@ -1329,8 +1362,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               title: const Text('YouTube Roadmap',
                                   style: TextStyle(
                                       fontWeight: FontWeight.w700)),
-                              subtitle: const Text(
-                                  'Import videos from a playlist'),
+                              subtitle:
+                                  const Text('Import videos from a playlist'),
                               onTap: () {
                                 Navigator.pop(sheetContext);
                                 Navigator.push(
@@ -1350,8 +1383,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF4F46E5)
                                       .withValues(alpha: 0.12),
-                                  borderRadius:
-                                      BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: const Icon(
                                   Icons.checklist_rounded,
@@ -1361,8 +1393,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               title: const Text('Manual Roadmap',
                                   style: TextStyle(
                                       fontWeight: FontWeight.w700)),
-                              subtitle:
-                                  const Text('Add your own tasks'),
+                              subtitle: const Text('Add your own tasks'),
                               onTap: () {
                                 Navigator.pop(sheetContext);
                                 Navigator.push(
