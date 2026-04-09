@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Local calendar date for streak tracking (yyyy-MM-dd).
 String _streakDateString(DateTime d) {
@@ -1967,8 +1968,9 @@ Widget build(BuildContext context) {
 class RoadmapDetailScreen extends StatefulWidget {
   final String docId;
   final String name;
-  final List<String> videos;
+  final List<String> videos;   // video titles (unchanged)
   final List<bool>? completed;
+  final List<String>? urls;    // NEW: video URLs (optional, pass if available)
 
   const RoadmapDetailScreen({
     super.key,
@@ -1976,6 +1978,7 @@ class RoadmapDetailScreen extends StatefulWidget {
     required this.name,
     required this.videos,
     this.completed,
+    this.urls,                 // NEW
   });
 
   @override
@@ -1983,39 +1986,237 @@ class RoadmapDetailScreen extends StatefulWidget {
 }
 
 class _RoadmapDetailScreenState extends State<RoadmapDetailScreen> {
+  // ── original state (unchanged) ───────────────────────────
   late List<bool> isCompleted;
+
+  // ── NEW state ─────────────────────────────────────────────
+  late List<bool>   isStarred;   // star/bookmark per item
+  late List<String> notes;       // notes per item
 
   @override
   void initState() {
     super.initState();
+    // original
     isCompleted = widget.completed ??
-      List.generate(widget.videos.length, (index) => false);
+        List.generate(widget.videos.length, (_) => false);
+
+    // new — defaults until Firestore data loads
+    isStarred = List.generate(widget.videos.length, (_) => false);
+    notes     = List.generate(widget.videos.length, (_) => '');
+
+    // load starred + notes from Firestore
+    _loadExtras();
   }
 
+  // ── original progress logic (unchanged) ──────────────────
   double getProgress() {
     if (widget.videos.isEmpty) return 0;
-    int done = isCompleted.where((e) => e).length;
+    final done = isCompleted.where((e) => e).length;
     return done / widget.videos.length;
   }
 
+  // ── NEW: load starred + notes from Firestore ─────────────
+  Future<void> _loadExtras() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('roadmaps')
+        .doc(widget.docId)
+        .get();
+
+    if (!doc.exists) return;
+    final data = doc.data()!;
+
+    setState(() {
+      // starred: stored as List<bool> under key 'starred'
+      if (data['starred'] is List) {
+        final raw = List<bool>.from(
+          (data['starred'] as List).map((e) => e == true),
+        );
+        // pad / trim to match video count
+        isStarred = List.generate(
+          widget.videos.length,
+          (i) => i < raw.length ? raw[i] : false,
+        );
+      }
+
+      // notes: stored as List<String> under key 'notes'
+      if (data['notes'] is List) {
+        final raw = List<String>.from(
+          (data['notes'] as List).map((e) => e?.toString() ?? ''),
+        );
+        notes = List.generate(
+          widget.videos.length,
+          (i) => i < raw.length ? raw[i] : '',
+        );
+      }
+    });
+  }
+
+  // ── NEW: save starred list to Firestore ───────────────────
+  Future<void> _saveStarred() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('roadmaps')
+        .doc(widget.docId)
+        .update({'starred': isStarred});
+  }
+
+  // ── NEW: save notes list to Firestore ─────────────────────
+  Future<void> _saveNotes() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('roadmaps')
+        .doc(widget.docId)
+        .update({'notes': notes});
+  }
+
+  // ── NEW: open notes bottom sheet ─────────────────────────
+  void _openNotes(BuildContext context, int index) {
+    final controller = TextEditingController(text: notes[index]);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            8,
+            20,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Notes',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: _N.textDark,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.videos[index],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _N.textMid,
+                    ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: controller,
+                maxLines: 5,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Write your notes here...',
+                  hintStyle: TextStyle(color: _N.textLight),
+                  filled: true,
+                  fillColor: _N.accentSoft.withOpacity(0.5),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: _N.cardBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: _N.cardBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide:
+                        const BorderSide(color: _N.accent, width: 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              ElevatedButton(
+                onPressed: () async {
+                  setState(() => notes[index] = controller.text);
+                  await _saveNotes();
+                  Navigator.pop(ctx);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _N.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Save notes',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ── NEW: open YouTube URL ─────────────────────────────────
+  Future<void> _openYouTube(int index) async {
+    final url = (widget.urls != null && index < widget.urls!.length)
+        ? widget.urls![index]
+        : null;
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No URL available for this item')),
+      );
+      return;
+    }
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  // ── build ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
+    final media             = MediaQuery.of(context);
     final horizontalPadding = media.size.width < 520 ? 16.0 : 20.0;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.name),
+        title: Text(
+          widget.name,
+          style: const TextStyle(
+            color: _N.textDark,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+            fontSize: 18,
+          ),
+        ),
         centerTitle: false,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: Colors.transparent,
+        backgroundColor: _N.skyTop.withOpacity(0.72),
         surfaceTintColor: Colors.transparent,
+        iconTheme: const IconThemeData(color: _N.textDark),
+        // ── original back button logic (unchanged) ────────────
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
             final user = FirebaseAuth.instance.currentUser;
-
             if (user != null) {
               await FirebaseFirestore.instance
                   .collection('users')
@@ -2027,194 +2228,306 @@ class _RoadmapDetailScreenState extends State<RoadmapDetailScreen> {
                 'progress': getProgress(),
               });
             }
-
             Navigator.pop(context);
           },
         ),
       ),
       extendBodyBehindAppBar: true,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF6200EE).withValues(alpha: 0.06),
-              const Color(0xFF00C2FF).withValues(alpha: 0.06),
-              const Color(0xFFFFFFFF),
-            ],
-            stops: const [0.0, 0.55, 1.0],
-          ),
-        ),
-        child: SafeArea(
-          child: ListView.builder(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              8,
-              horizontalPadding,
-              20,
-            ),
-            itemCount: widget.videos.length + 1,
-            itemBuilder: (context, i) {
-              if (i == 0) {
-                final progress = getProgress().clamp(0.0, 1.0);
-                final percent = (progress * 100).round();
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: Colors.black.withValues(alpha: 0.06),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.06),
-                          blurRadius: 18,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 54,
-                          height: 54,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              CircularProgressIndicator(
-                                value: progress,
-                                strokeWidth: 6,
-                                backgroundColor:
-                                    Colors.black.withValues(alpha: 0.06),
-                                valueColor: const AlwaysStoppedAnimation(
-                                  Color(0xFF4F46E5),
-                                ),
-                              ),
-                              Text(
-                                "$percent%",
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.2,
-                                    ),
-                              ),
-                            ],
+      // ── nature background (matches HomeScreen) ────────────
+      body: Stack(
+        children: [
+          // Sky
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0.0, 0.5, 1.0],
+                  colors: [_N.skyTop, _N.skyMid, _N.skyHorizon],
+                ),
+              ),
+            ),
+          ),
+          // Far hills
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            height: media.size.height * 0.40,
+            child: ClipPath(
+              clipper: const _HillClipper(
+                  [0.0, 0.42, 0.52, 0.38, 0.48, 0.36, 0.55, 0.45, 1.0]),
+              child: Container(color: _N.hillFar),
+            ),
+          ),
+          // Near hills
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            height: media.size.height * 0.22,
+            child: ClipPath(
+              clipper: const _HillClipper(
+                  [0.0, 0.62, 0.50, 0.55, 0.68, 0.46, 0.60, 0.70, 1.0]),
+              child: Container(color: _N.hillNear),
+            ),
+          ),
+          // Ground
+          Positioned(
+            bottom: 0, left: 0, right: 0, height: 56,
+            child: Container(color: _N.ground),
+          ),
+
+          // ── content ────────────────────────────────────────
+          SafeArea(
+            child: ListView.builder(
+              padding: EdgeInsets.fromLTRB(
+                  horizontalPadding, 8, horizontalPadding, 80),
+              itemCount: widget.videos.length + 1,
+              itemBuilder: (context, i) {
+
+                // ── index 0: progress card (original, unchanged) ──
+                if (i == 0) {
+                  final progress = getProgress().clamp(0.0, 1.0);
+                  final percent  = (progress * 100).round();
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _N.cardBg.withOpacity(0.93),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: _N.cardBorder),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _N.hillNear.withOpacity(0.10),
+                            blurRadius: 18,
+                            offset: const Offset(0, 10),
                           ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Progress",
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.2,
-                                    ),
-                              ),
-                              const SizedBox(height: 6),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(999),
-                                child: LinearProgressIndicator(
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 54,
+                            height: 54,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircularProgressIndicator(
                                   value: progress,
-                                  minHeight: 8,
+                                  strokeWidth: 6,
                                   backgroundColor:
-                                      Colors.black.withValues(alpha: 0.06),
-                                  valueColor: const AlwaysStoppedAnimation(
-                                    Color(0xFF4F46E5),
+                                      _N.cardBorder.withOpacity(0.5),
+                                  valueColor:
+                                      const AlwaysStoppedAnimation(_N.accent),
+                                ),
+                                Text(
+                                  "$percent%",
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -0.2,
+                                        color: _N.textDark,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Progress",
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -0.2,
+                                        color: _N.textDark,
+                                      ),
+                                ),
+                                const SizedBox(height: 6),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: progress,
+                                    minHeight: 8,
+                                    backgroundColor:
+                                        _N.cardBorder.withOpacity(0.6),
+                                    valueColor: const AlwaysStoppedAnimation(
+                                        _N.accent),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                "${isCompleted.where((e) => e).length} of ${widget.videos.length} videos completed",
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(
-                                      color: Colors.grey.shade700,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  "${isCompleted.where((e) => e).length} of ${widget.videos.length} completed",
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: _N.textMid,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                // ── item card ─────────────────────────────────
+                final index = i - 1;
+                final title = widget.videos[index];
+                final hasNote = notes[index].trim().isNotEmpty;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: _N.cardBg.withOpacity(0.93),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: _N.cardBorder, width: 1.2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _N.hillNear.withOpacity(0.08),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // ── Checkbox (original logic, unchanged) ──
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Checkbox(
+                          value: isCompleted[index],
+                          activeColor: _N.accent,
+                          checkColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          onChanged: (value) {
+                            final newVal     = value ?? false;
+                            final wasCompleted = isCompleted[index];
+                            setState(() => isCompleted[index] = newVal);
+                            if (newVal && !wasCompleted) {
+                              final uid =
+                                  FirebaseAuth.instance.currentUser?.uid;
+                              if (uid != null) {
+                                applyStreakOnTaskCompleted(uid);
+                                awardXpOnFirstCompletion(
+                                    uid, widget.docId, index);
+                              }
+                            }
+                          },
+                        ),
+                      ),
+
+                      // ── Title ─────────────────────────────────
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          child: Text(
+                            title,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.25,
+                                  color: isCompleted[index]
+                                      ? _N.textLight
+                                      : _N.textDark,
+                                  decoration: isCompleted[index]
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                          ),
+                        ),
+                      ),
+
+                      // ── Action icons ───────────────────────────
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // YouTube button
+                          IconButton(
+                            onPressed: () => _openYouTube(index),
+                            icon: const Icon(Icons.play_circle_outline_rounded),
+                            color: const Color(0xFFE53935),
+                            iconSize: 22,
+                            tooltip: 'Open on YouTube',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                                minWidth: 32, minHeight: 32),
+                          ),
+
+                          // Notes button (dot indicator if note exists)
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              IconButton(
+                                onPressed: () => _openNotes(context, index),
+                                icon: Icon(
+                                  hasNote
+                                      ? Icons.sticky_note_2_rounded
+                                      : Icons.sticky_note_2_outlined,
+                                ),
+                                color: hasNote
+                                    ? const Color(0xFFF59E0B)
+                                    : _N.textLight,
+                                iconSize: 22,
+                                tooltip: 'Notes',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                    minWidth: 32, minHeight: 32),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
+
+                          // Star button
+                          IconButton(
+                            onPressed: () async {
+                              setState(
+                                  () => isStarred[index] = !isStarred[index]);
+                              await _saveStarred();
+                            },
+                            icon: Icon(
+                              isStarred[index]
+                                  ? Icons.star_rounded
+                                  : Icons.star_outline_rounded,
+                            ),
+                            color: isStarred[index]
+                                ? const Color(0xFFFFC107)
+                                : _N.textLight,
+                            iconSize: 22,
+                            tooltip: isStarred[index]
+                                ? 'Remove bookmark'
+                                : 'Bookmark for revision',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                                minWidth: 32, minHeight: 32),
+                          ),
+
+                          const SizedBox(width: 6),
+                        ],
+                      ),
+                    ],
                   ),
                 );
-              }
-
-              final index = i - 1;
-              final title = widget.videos[index];
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: Colors.black.withValues(alpha: 0.06),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 14,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: CheckboxListTile(
-                  value: isCompleted[index],
-                  onChanged: (value) {
-                    final newVal = value ?? false;
-                    final wasCompleted = isCompleted[index];
-                    setState(() {
-                      isCompleted[index] = newVal;
-                    });
-                    if (newVal && !wasCompleted) {
-                      final uid = FirebaseAuth.instance.currentUser?.uid;
-                      if (uid != null) {
-                        applyStreakOnTaskCompleted(uid);
-                        awardXpOnFirstCompletion(uid, widget.docId, index);
-                      }
-                    }
-                  },
-                  activeColor: const Color(0xFF4F46E5),
-                  checkColor: Colors.white,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
-                  title: Text(
-                    title,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          height: 1.25,
-                        ),
-                  ),
-                ),
-              );
-            },
+              },
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
