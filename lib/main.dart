@@ -1139,6 +1139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   videos: List<String>.from(data['videos']),
                                   completed:
                                       List<bool>.from(data['completed']),
+                                  urls: List<String>.from(data['urls'] ?? []),
                                 ),
                               ),
                             );
@@ -1708,6 +1709,7 @@ class _AddRoadmapScreenState extends State<AddRoadmapScreen> {
   final TextEditingController linkController = TextEditingController();
 
   List<String> videoTitles = [];
+  List<String> videoUrls   = []; 
   late List<bool> isCompleted = [];
 
   double getProgress() {
@@ -1738,13 +1740,19 @@ class _AddRoadmapScreenState extends State<AddRoadmapScreen> {
 
       List<String> tempList = [];
 
+      List<String> tempTitles = [];
+      List<String> tempUrls   = [];
+
       for (var item in items) {
-        tempList.add(item['snippet']['title']);
+        tempTitles.add(item['snippet']['title']);
+        final videoId = item['snippet']['resourceId']['videoId'] ?? '';
+        tempUrls.add('https://www.youtube.com/watch?v=$videoId');
       }
 
       setState(() {
-        videoTitles = tempList;
-        isCompleted = List.generate(tempList.length, (index) => false);
+        videoTitles = tempTitles;
+        videoUrls   = tempUrls;
+        isCompleted = List.generate(tempTitles.length, (_) => false);
       });
     } else {
       print("Failed to fetch videos");
@@ -1890,6 +1898,7 @@ Widget build(BuildContext context) {
                                         .add({
                                       'name': nameController.text,
                                       'videos': videoTitles,
+                                      'urls':   videoUrls, 
                                       'completed': List.generate(
                                           videoTitles.length,
                                           (index) => false),
