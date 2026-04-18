@@ -1726,37 +1726,49 @@ class _AddRoadmapScreenState extends State<AddRoadmapScreen> {
 
   Future<void> fetchPlaylistVideos() async {
     final playlistId = extractPlaylistId(linkController.text);
-
     const apiKey = "AIzaSyBVviVf9Gt_K9fayatRT6vYf93-11I3onI";
 
-    final url =
-        "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=$playlistId&key=$apiKey";
+    List<String> tempTitles = [];
+    List<String> tempUrls   = [];
+    String? nextPageToken;
 
-    final response = await http.get(Uri.parse(url));
+    do {
+      final pageParam = nextPageToken != null
+          ? '&pageToken=$nextPageToken'
+          : '';
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final items = data['items'];
+      final url =
+          "https://www.googleapis.com/youtube/v3/playlistItems"
+          "?part=snippet"
+          "&maxResults=50"
+          "&playlistId=$playlistId"
+          "&key=$apiKey"
+          "$pageParam";
 
-      List<String> tempList = [];
+      final response = await http.get(Uri.parse(url));
 
-      List<String> tempTitles = [];
-      List<String> tempUrls   = [];
+      if (response.statusCode == 200) {
+        final data  = jsonDecode(response.body);
+        final items = data['items'];
 
-      for (var item in items) {
-        tempTitles.add(item['snippet']['title']);
-        final videoId = item['snippet']['resourceId']['videoId'] ?? '';
-        tempUrls.add('https://www.youtube.com/watch?v=$videoId');
+        for (var item in items) {
+          tempTitles.add(item['snippet']['title']);
+          final videoId = item['snippet']['resourceId']['videoId'] ?? '';
+          tempUrls.add('https://www.youtube.com/watch?v=$videoId');
+        }
+
+        nextPageToken = data['nextPageToken'];
+      } else {
+        print("Failed to fetch videos: ${response.statusCode}");
+        break;
       }
+    } while (nextPageToken != null);
 
-      setState(() {
-        videoTitles = tempTitles;
-        videoUrls   = tempUrls;
-        isCompleted = List.generate(tempTitles.length, (_) => false);
-      });
-    } else {
-      print("Failed to fetch videos");
-    }
+    setState(() {
+      videoTitles = tempTitles;
+      videoUrls   = tempUrls;
+      isCompleted = List.generate(tempTitles.length, (_) => false);
+    });
   }
 
   @override
