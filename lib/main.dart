@@ -508,7 +508,112 @@ class _LoginScreenState extends State<LoginScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: () {},
+                            onPressed: () {
+                              final forgotEmailController = TextEditingController();
+
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  backgroundColor: _N.cardBg,
+                                  title: const Text(
+                                    'Reset password',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: _N.textDark,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Enter your email address and we\'ll send you a password reset link.',
+                                        style: TextStyle(color: _N.textMid, height: 1.4),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      TextFormField(
+                                        controller: forgotEmailController,
+                                        keyboardType: TextInputType.emailAddress,
+                                        style: const TextStyle(color: _N.textDark),
+                                        decoration: InputDecoration(
+                                          labelText: 'Email address',
+                                          labelStyle: const TextStyle(color: _N.textMid),
+                                          prefixIcon: const Icon(
+                                            Icons.email_outlined,
+                                            color: _N.textMid,
+                                          ),
+                                          filled: true,
+                                          fillColor: _N.accentSoft.withOpacity(0.55),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(14),
+                                            borderSide: const BorderSide(color: _N.cardBorder),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(14),
+                                            borderSide: const BorderSide(
+                                                color: _N.accent, width: 2),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx),
+                                      style: TextButton.styleFrom(
+                                          foregroundColor: _N.textMid),
+                                      child: const Text(
+                                        'Cancel',
+                                        style: TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: () async {
+                                        final email = forgotEmailController.text.trim();
+                                        if (email.isEmpty) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                                content: Text('Please enter your email')),
+                                          );
+                                          return;
+                                        }
+                                        try {
+                                          await FirebaseAuth.instance
+                                              .sendPasswordResetEmail(email: email);
+                                          Navigator.pop(ctx);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Password reset email sent! Check your inbox.',
+                                              ),
+                                            ),
+                                          );
+                                        } catch (e) {
+                                          Navigator.pop(ctx);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'No account found with that email.',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                      style: TextButton.styleFrom(
+                                          foregroundColor: _N.accent),
+                                      child: const Text(
+                                        'Send reset link',
+                                        style: TextStyle(fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                             style: TextButton.styleFrom(
                               foregroundColor: _N.accent,
                               padding: EdgeInsets.zero,
